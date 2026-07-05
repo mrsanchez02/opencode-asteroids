@@ -1,0 +1,4 @@
+.worktrees
+.env
+.playwright-mcp
+.opencode-playwright-profile*
