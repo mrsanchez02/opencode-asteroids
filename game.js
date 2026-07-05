@@ -53,6 +53,8 @@ const SHIP_SKINS = [
     name: 'CLASSIC',
     stroke: '#fff',
     thrust: 'rgba(255, 130, 0, 0.85)',
+    shipScale: 1,
+    pointMultiplier: 1,
     drawBody(scale = 1) {
       ctx.beginPath();
       ctx.moveTo(20 * scale, 0);
@@ -75,6 +77,8 @@ const SHIP_SKINS = [
     name: 'NOVA',
     stroke: '#66d9ff',
     thrust: 'rgba(102, 217, 255, 0.95)',
+    shipScale: 1,
+    pointMultiplier: 1,
     drawBody(scale = 1) {
       ctx.beginPath();
       ctx.moveTo(21 * scale, 0);
@@ -108,6 +112,8 @@ const SHIP_SKINS = [
     name: 'WRAITH',
     stroke: '#ff77ff',
     thrust: 'rgba(193, 120, 255, 0.95)',
+    shipScale: 1,
+    pointMultiplier: 1,
     drawBody(scale = 1) {
       ctx.beginPath();
       ctx.moveTo(22 * scale, 0);
@@ -140,6 +146,8 @@ const SHIP_SKINS = [
     name: 'VANGUARD',
     stroke: '#8aff80',
     thrust: 'rgba(138, 255, 128, 0.9)',
+    shipScale: 1,
+    pointMultiplier: 1,
     drawBody(scale = 1) {
       ctx.beginPath();
       ctx.moveTo(18 * scale, 0);
@@ -165,6 +173,38 @@ const SHIP_SKINS = [
       ctx.moveTo(-12 * scale, -5 * scale);
       ctx.lineTo((-12 - pulse) * scale, 0);
       ctx.lineTo(-12 * scale, 5 * scale);
+      ctx.stroke();
+    }
+  },
+  {
+    id: 'phantom',
+    name: 'PHANTOM',
+    stroke: '#aa66ff',
+    thrust: 'rgba(170, 102, 255, 0.9)',
+    shipScale: 2,
+    pointMultiplier: 2,
+    drawBody(scale = 1) {
+      ctx.beginPath();
+      ctx.moveTo(22 * scale, 0);
+      ctx.lineTo(0, -10 * scale);
+      ctx.lineTo(-14 * scale, -6 * scale);
+      ctx.lineTo(-9 * scale, 0);
+      ctx.lineTo(-14 * scale, 6 * scale);
+      ctx.lineTo(0, 10 * scale);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, -2 * scale);
+      ctx.lineTo(-5 * scale, 0);
+      ctx.lineTo(0, 2 * scale);
+      ctx.stroke();
+    },
+    drawThruster(scale = 1) {
+      ctx.beginPath();
+      ctx.moveTo(-11 * scale, -4 * scale);
+      ctx.lineTo((-13 - rand(5, 12)) * scale, 0);
+      ctx.lineTo(-11 * scale, 4 * scale);
       ctx.stroke();
     }
   }
@@ -329,7 +369,7 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
+    this.syncScale();
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
@@ -337,6 +377,12 @@ class Ship {
     this.shieldTimer = 0;
     this.tripleShotTimer = 0;
     this.dead          = false;
+  }
+
+  syncScale() {
+    const skin = getCurrentSkin();
+    this.scale = skin.shipScale || 1;
+    this.radius = 12 * this.scale;
   }
 
   update(dt) {
@@ -369,7 +415,7 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
+    const NOSE = 21 * this.scale;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     if (this.tripleShotTimer <= 0) return [new Bullet(ox, oy, this.angle)];
@@ -392,7 +438,7 @@ class Ship {
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
-    drawShipSkin(skin, 1, this.thrusting);
+    drawShipSkin(skin, this.scale, this.thrusting);
 
     if (this.shieldTimer > 0) {
       ctx.beginPath();
@@ -640,7 +686,8 @@ function maybeDropPowerUp(asteroid) {
 
 function destroyAsteroid(asteroid, fragments) {
   asteroid.dead = true;
-  score += getAsteroidPoints(asteroid);
+  const multiplier = getCurrentSkin().pointMultiplier || 1;
+  score += getAsteroidPoints(asteroid) * multiplier;
   explode(asteroid.x, asteroid.y, asteroid.size * 5);
   maybeDropPowerUp(asteroid);
   fragments.push(...asteroid.split());
@@ -692,7 +739,7 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
-  if (pressed('KeyC')) cycleShipSkin();
+  if (pressed('KeyC')) { cycleShipSkin(); if (ship) ship.syncScale(); }
 
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
