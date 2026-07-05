@@ -1,0 +1,149 @@
+name: issue-triage
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply intake labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const title = (issue.title || '').trim();
+            const body = issue.body || '';
+            const combinedText = `${title}\n\n${body}`.toLowerCase();
+
+            const repoLabels = {
+              bug: 'd73a4a',
+              feature: '1d76db',
+              question: 'd876e3',
+              enhancement: 'a2eeef',
+              'needs-review': 'fbca04',
+            };
+
+            async function ensureLabel(name) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name,
+                  color: repoLabels[name],
+                });
+              }
+            }
+
+            function inferType(text) {
+              const explicitQuestionPatterns = [
+                /(^|\s)(how|why|help|question)(\s|$)/i,
+                /(^|\s)(como|cómo|por que|por qué|ayuda|duda)(\s|$)/i,
+              ];
+
+              const bugPatterns = [
+                /(^|\s)(bug|error|issue|problem|broken|fails?|failure|crash)(\s|$)/i,
+                /(^|\s)(no funciona|falla|rompe|se cae)(\s|$)/i,
+              ];
+
+              const featurePatterns = [
+                /(^|\s)(feature|add|support|allow|new)(\s|$)/i,
+                /(^|\s)(agregar|anadir|añadir|soportar|permitir|necesito|quiero)(\s|$)/i,
+              ];
+
+              const enhancementPatterns = [
+                /(^|\s)(enhancement|improve|better|optimi[sz]e|cleanup|refactor)(\s|$)/i,
+                /(^|\s)(mejorar|optimizar|refactorizar|limpiar)(\s|$)/i,
+              ];
+
+              const hasExplicitQuestion = explicitQuestionPatterns.some((pattern) => pattern.test(text));
+              const hasBug = bugPatterns.some((pattern) => pattern.test(text));
+              const hasFeature = featurePatterns.some((pattern) => pattern.test(text));
+              const hasEnhancement = enhancementPatterns.some((pattern) => pattern.test(text));
+              const looksLikeQuestion = /\?/.test(text);
+
+              if (hasExplicitQuestion) return 'question';
+              if (hasBug) return 'bug';
+              if (hasFeature) return 'feature';
+              if (hasEnhancement) return 'enhancement';
+              if (looksLikeQuestion) return 'question';
+
+              return 'enhancement';
+            }
+
+            const inferredType = inferType(combinedText);
+            const labelsToApply = Array.from(new Set(['needs-review', inferredType]));
+
+            for (const label of labelsToApply) {
+              await ensureLabel(label);
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: issue.number,
+              labels: labelsToApply,
+            });
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run OpenCode issue triage
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/big-pickle
+          prompt: |
+            Review the newly opened GitHub issue and act as the triage bot.
+
+            Goals:
+            - Post exactly one issue comment with a normalized summary for maintainers.
+            - Preserve the reporter's original text exactly as written in a quoted section under `---`.
+            - Ensure the issue keeps the flow label `needs-review`.
+            - Ensure the issue has exactly one primary type label from this set: `bug`, `feature`, `question`, `enhancement`.
+            - If the current primary type label is wrong, remove the incorrect one and apply the correct one.
+
+            Instructions:
+            - Base your classification on the issue title and body.
+            - Do not modify the issue body.
+            - Do not open a pull request or make code changes.
+            - Do not add extra labels outside the approved set.
+            - If the issue body is empty, explicitly note that in the normalized comment.
+            - Keep the comment concise, useful, and deterministic in structure.
+
+            Comment format:
+            ## Issue Intake
+
+            ### Summary
+            - Type: <bug|feature|question|enhancement>
+            - Flow: needs-review
+            - Reporter: @<username>
+            - Issue: #<number>
+            - Status: Pending review
+
+            ### Normalized Report
+            - Title: <issue title>
+            - Main request: <one concise sentence summarizing the request>
+            - Review notes: <what maintainers should verify next>
+            - Suggested next step: <the immediate triage action>
+
+            ---
+
+            ### Original Report
+            > <quote the original body exactly line by line>
